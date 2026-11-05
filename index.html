@@ -201,7 +201,7 @@
     "text": "🐾 Заголовок\n\nОсновні задачі:\n— ..."
   }
 ]'></textarea>
-    <p class="hint">Одразу після вставки валідний JSON додається до списку, дублікати пропускаються. Якщо вводиш вручну, натисни кнопку нижче.</p>
+    <p class="hint">Одразу після вставки валідний JSON або звичайний текст додається до списку. Якщо вводиш вручну, натисни кнопку нижче.</p>
     <button type="button" id="addBtn" class="primary" style="flex:none;width:100%">Додати з поля</button>
   </section>
 
@@ -214,6 +214,7 @@
       <ul id="mineList"></ul>
     </div>
     <div class="row-btns">
+      <button type="button" id="refreshBtn">🔄 Синхронізувати з хмарою</button>
       <button type="button" id="linkFileBtn" style="display:none">📁 Підключити локальний data.json</button>
       <button type="button" id="downloadBtn">Завантажити оновлений data.json</button>
       <button type="button" id="restoreBtn" hidden>Відновити видалені тексти</button>
@@ -248,7 +249,7 @@
     status: $("status"),
     textInput: $("textInput"),
     add: $("addBtn"), mineBox: $("mineBox"), mineListWrap: $("mineListWrap"), mineList: $("mineList"),
-    linkFileBtn: $("linkFileBtn"), download: $("downloadBtn"), restore: $("restoreBtn"), clear: $("clearBtn")
+    refreshBtn: $("refreshBtn"), linkFileBtn: $("linkFileBtn"), download: $("downloadBtn"), restore: $("restoreBtn"), clear: $("clearBtn")
   };
 
   function setStatus(msg, isError) {
@@ -270,28 +271,38 @@
   }
 
   function allItems() {
-    return defaults.concat(custom).filter(function (i) {
-      return !deletedKeys[itemKey(i)];
-    });
+    var seen = {};
+    var list = [];
+    var combined = defaults.concat(custom);
+    for (var i = 0; i < combined.length; i++) {
+      var item = combined[i];
+      var k = itemKey(item);
+      if (!deletedKeys[k] && !seen[k]) {
+        seen[k] = true;
+        list.push(item);
+      }
+    }
+    return list;
   }
 
-  // Збереження у фізичний файл data.json на диску (через Node.js сервер або File System Access API)
+  // Збереження даних (через Vercel KV / Node.js сервер / File System Access API)
   async function saveToDisk(dataArray) {
-    var isLocalhost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    try {
+      var res = await fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataArray)
+      });
+      if (res.ok) {
+        var respData = await res.json().catch(function () { return {}; });
+        if (respData.storage === "kv") return "kv";
+        if (respData.storage === "local_file") return "server";
+        if (respData.kvConfigured === false) return "kv_missing";
+        return "server";
+      }
+    } catch (e) {}
 
-    // 1. Тільки якщо запущено локально через node local-server.js
-    if (isLocalhost && (location.protocol === "http:" || location.protocol === "https:")) {
-      try {
-        var res = await fetch("/api/save", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(dataArray)
-        });
-        if (res.ok) return "server";
-      } catch (e) {}
-    }
-
-    // 2. Якщо підключено локальний файл через File System Access API (працює і на Vercel у Chrome/Edge)
+    // Якщо підключено локальний файл через File System Access API (у Chrome на ПК)
     if (localFileHandle) {
       try {
         var writable = await localFileHandle.createWritable();
@@ -313,10 +324,14 @@
     var saveType = await saveToDisk(currentData);
 
     var note = "";
-    if (saveType === "server") {
+    if (saveType === "kv") {
+      note = " (☁️ збережено у Vercel KV)";
+    } else if (saveType === "server") {
       note = " (💾 data.json оновлено на диску)";
     } else if (saveType === "fsa") {
       note = " (💾 записано у підключений data.json)";
+    } else if (saveType === "kv_missing") {
+      note = " (📱 збережено в браузері; підключіть KV у Vercel для синхронізації)";
     }
 
     if (prefixMsg) {
@@ -462,22 +477,43 @@
     await persistChanges("🗑️ Текст видалено.");
   }
 
-  function parseJson(raw) {
+  function sanitizeQuotes(str) {
+    return str
+      .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"') // “ ” „ « » -> "
+      .replace(/[\u2018\u2019]/g, "'");                   // ‘ ’ -> '
+  }
+
+  function parseInput(raw) {
     var t = raw.trim();
     if (!t) return null;
-    var tries = [t, t.replace(/`/g, "")];
+
+    // 1. Пробуємо розпарсити як JSON (виправляємо мобільні лапки та розмітку markdown)
+    var clean = sanitizeQuotes(t).replace(/```json/gi, "").replace(/```/g, "").trim();
+    var tries = [clean];
     for (var i = 0; i < tries.length; i++) {
-      try { return normalize(JSON.parse(tries[i])); } catch (e) { /* далі */ }
+      try {
+        var parsed = JSON.parse(tries[i]);
+        return normalize(parsed);
+      } catch (e) {}
     }
-    return null;
+
+    // 2. Якщо це звичайний текст (зручно вставляти з телефону):
+    var currentTopic = els.topic.value;
+    if (!currentTopic || currentTopic === ALL) {
+      currentTopic = "Загальні";
+    }
+    return [{
+      topic: currentTopic,
+      text: t
+    }];
   }
 
   async function addFromField(showErrors) {
     var raw = els.textInput.value;
-    if (!raw.trim()) { if (showErrors) setStatus("Встав JSON у поле.", true); return; }
-    var parsed = parseJson(raw);
-    if (!parsed) {
-      if (showErrors) setStatus("Не вдалося прочитати JSON. Перевір дужки, коми й лапки.", true);
+    if (!raw.trim()) { if (showErrors) setStatus("Встав текст або JSON у поле.", true); return; }
+    var parsed = parseInput(raw);
+    if (!parsed || !parsed.length) {
+      if (showErrors) setStatus("Не вдалося додати текст.", true);
       return;
     }
     var have = {};
@@ -489,9 +525,8 @@
       return true;
     });
     els.textInput.value = "";
-    if (!fresh.length) { setStatus("Усі ці тексти вже є у списку."); return; }
+    if (!fresh.length) { setStatus("Цей текст вже є у списку."); return; }
 
-    // Зберігаємо і в custom (для localStorage), і в defaults (для поточної бази)
     defaults = defaults.concat(fresh);
     custom = custom.concat(fresh);
     renderAll();
@@ -659,20 +694,47 @@
       });
     }
 
-    fetch("data.json", { cache: "no-cache" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("Не вдалося завантажити data.json");
-        return r.json();
-      })
-      .then(function (d) {
-        defaults = normalize(d);
-      })
-      .catch(function () {
-        defaults = normalize(FALLBACK);
-      })
-      .then(function () {
-        renderAll();
-      });
+    els.refreshBtn.addEventListener("click", function () {
+      loadData(true);
+    });
+
+    async function loadData(manual) {
+      if (manual) setStatus("🔄 Оновлення бази даних...");
+      try {
+        var r = await fetch("/api/data", { cache: "no-cache" });
+        if (r.ok) {
+          var d = await r.json();
+          var items = d && (d.items || (Array.isArray(d) ? d : null));
+          if (Array.isArray(items) && items.length > 0) {
+            defaults = normalize(items);
+            renderAll();
+            if (d.source === "kv") {
+              setStatus("☁️ Базу синхронізовано з Vercel KV (" + defaults.length + " записів)");
+            } else if (manual) {
+              setStatus("✅ Базу оновлено (" + defaults.length + " записів)");
+            }
+            return;
+          }
+        }
+      } catch (e) {}
+
+      fetch("data.json", { cache: "no-cache" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("Не вдалося завантажити data.json");
+          return r.json();
+        })
+        .then(function (d) {
+          defaults = normalize(d);
+          renderAll();
+          if (manual) setStatus("✅ Базу завантажено з data.json (" + defaults.length + " записів)");
+        })
+        .catch(function () {
+          defaults = normalize(FALLBACK);
+          renderAll();
+        });
+    }
+
+    loadData(false);
   }
 
   init();

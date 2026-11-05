@@ -1,5 +1,5 @@
 // Локальний сервер на чистому Node.js (без сторонніх бібліотек)
-// Запуск: node server.js
+// Запуск: node local-server.js
 // Адреса: http://localhost:3000
 
 const http = require('http');
@@ -18,8 +18,33 @@ const MIME = {
 };
 
 const server = http.createServer((req, res) => {
+  const reqUrl = req.url.split('?')[0];
+
+  // Отримання даних через API
+  if (req.method === 'GET' && reqUrl === '/api/data') {
+    fs.readFile(DATA_FILE, 'utf-8', (err, content) => {
+      if (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ source: 'empty', items: [] }));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(content);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          source: 'file',
+          items: Array.isArray(parsed) ? parsed : (parsed.items || [])
+        }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // Збереження оновленого data.json на диску
-  if (req.method === 'POST' && req.url === '/api/save') {
+  if (req.method === 'POST' && reqUrl === '/api/save') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
@@ -27,7 +52,7 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body);
         fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ status: 'ok', count: data.length }));
+        res.end(JSON.stringify({ status: 'ok', storage: 'local_file', count: data.length }));
         console.log(`[OK] data.json успішно оновлено на диску. Записів: ${data.length}`);
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -38,7 +63,6 @@ const server = http.createServer((req, res) => {
   }
 
   // Віддача статичних файлів (index.html, data.json)
-  let reqUrl = req.url.split('?')[0];
   let filePath = path.join(DIR, reqUrl === '/' ? 'index.html' : reqUrl);
 
   fs.readFile(filePath, (err, content) => {
