@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Генератор текстів</title>
+<style>
+  :root {
+    --bg: #eef1f5;
+    --surface: #ffffff;
+    --ink: #1c2430;
+    --muted: #667085;
+    --line: #d9dee7;
+    --accent: #2f6df6;
+    --accent-ink: #ffffff;
+    --bubble: #e8f0ff;
+    --danger: #c0392b;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161d;
+      --surface: #1b212b;
+      --ink: #e8ecf2;
+      --muted: #96a0b0;
+      --line: #2c3544;
+      --accent: #6b96ff;
+      --accent-ink: #0d1220;
+      --bubble: #22304d;
+      --danger: #ff8a7a;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Color Emoji", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 48px;
+  }
+  main { width: 100%; max-width: 640px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .95rem; }
+
+  select, button, input[type="text"], textarea {
+    font: inherit;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    padding: 10px 14px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  select { flex: 1 1 100%; min-width: 0; }
+  .primary {
+    background: var(--accent); color: var(--accent-ink);
+    border-color: var(--accent); font-weight: 600;
+    flex: 1 1 100%; padding: 14px; font-size: 1.05rem;
+  }
+  .primary:hover { filter: brightness(1.08); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .result { min-height: 220px; }
+  .meta {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-bottom: 12px; color: var(--muted); font-size: .85rem;
+  }
+  .bubble {
+    background: var(--bubble);
+    border-radius: 14px;
+    padding: 14px 16px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.55;
+  }
+  .empty { color: var(--muted); }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .actions button {
+    padding: 9px 14px;
+    font-size: .9rem;
+    font-weight: 500;
+  }
+  .btn-copy {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+  .btn-delete {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--line);
+  }
+  .btn-delete:hover {
+    border-color: var(--danger);
+    background: rgba(192, 57, 43, 0.08);
+  }
+  .auto-del-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .85rem;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    margin-left: auto;
+  }
+  .auto-del-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+  }
+  @media (max-width: 480px) {
+    .auto-del-label {
+      width: 100%;
+      margin-left: 0;
+      margin-top: 4px;
+    }
+  }
+
+  .add { margin-top: 20px; }
+  .add label { display: block; font-size: .9rem; color: var(--muted); margin: 0 0 4px; }
+  .add input[type="text"], .add textarea { width: 100%; }
+  .add textarea { min-height: 220px; resize: vertical; line-height: 1.45; white-space: pre; font-size: .85rem; margin-top: 4px; }
+  .add .row { margin-bottom: 12px; }
+  .hint { font-size: .85rem; color: var(--muted); margin: 6px 0 0; }
+
+  .status { margin-top: 14px; font-size: .9rem; color: var(--muted); min-height: 1.4em; }
+  .status.error { color: var(--danger); }
+
+  .mine { margin-top: 20px; }
+  .mine ul { list-style: none; margin: 0; padding: 0; }
+  .mine li {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 0; border-top: 1px solid var(--line); font-size: .9rem;
+  }
+  .mine li:first-child { border-top: 0; }
+  .mine .t { flex: 1; min-width: 0; }
+  .mine .t b { display: block; font-weight: 600; }
+  .mine .t span {
+    display: block; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mine li button { padding: 6px 10px; font-size: .85rem; }
+  .row-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .row-btns button { padding: 8px 12px; font-size: .9rem; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Генератор текстів</h1>
+  <p class="sub" id="count">Завантаження…</p>
+
+  <div class="controls">
+    <button class="primary" id="randomBtn" type="button">Випадковий текст</button>
+    <select id="topicSelect" aria-label="Тематика"></select>
+  </div>
+
+  <section class="card result" aria-live="polite">
+    <div class="meta"><span id="topicLabel"></span><span id="indexLabel"></span></div>
+    <div class="bubble empty" id="output">Натисни кнопку, щоб отримати текст.</div>
+    <div class="actions" id="resultActions" hidden>
+      <button type="button" id="copyBtn" class="btn-copy">📋 Скопіювати</button>
+      <button type="button" id="deleteBtn" class="btn-delete">🗑️ Видалити цей текст</button>
+      <label class="auto-del-label" title="При копіюванні текст автоматично видаляється зі списку і більше не повторюється">
+        <input type="checkbox" id="autoDeleteCheck">
+        <span>Видаляти після копіювання</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="card add">
+    <h2>Додати тексти</h2>
+    <label for="textInput">Встав JSON — тексти додадуться самі</label>
+    <textarea id="textInput" spellcheck="false" placeholder='[
+  {
+    "topic": "Менеджер зоомагазину",
+    "text": "🐾 Заголовок\n\nОсновні задачі:\n— ..."
+  }
+]'></textarea>
+    <p class="hint">Одразу після вставки валідний JSON додається до списку, дублікати пропускаються. Якщо вводиш вручну, натисни кнопку нижче.</p>
+    <button type="button" id="addBtn" class="primary" style="flex:none;width:100%">Додати з поля</button>
+  </section>
+
+  <div class="status" id="status"></div>
+
+  <section class="card mine" id="mineBox">
+    <h2>База текстів</h2>
+    <div id="mineListWrap" hidden>
+      <p class="hint" style="margin-top:0">Додані вручну тексти:</p>
+      <ul id="mineList"></ul>
+    </div>
+    <div class="row-btns">
+      <button type="button" id="linkFileBtn" style="display:none">📁 Підключити локальний data.json</button>
+      <button type="button" id="downloadBtn">Завантажити оновлений data.json</button>
+      <button type="button" id="restoreBtn" hidden>Відновити видалені тексти</button>
+      <button type="button" id="clearBtn" hidden>Видалити всі додані вручну</button>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var STORAGE_KEY = "custom-texts-v2";
+  var STORAGE_DELETED_KEY = "deleted-texts-keys-v2";
+  var STORAGE_AUTO_DELETE = "auto-delete-after-copy-v2";
+  var FALLBACK = [
+    { topic: "Менеджер онлайн-магазину товарів для дому",
+      text: "📦 Менеджерка | онлайн-магазин товарів для дому\n\nПокупці звертаються щодо асортименту, оплати та доставки.\n\nОсновні задачі:\n— обробляти нові заявки;\n— відповідати на запитання;\n— супроводжувати замовлення до відправлення.\n\n🏠 дистанційно\n💰 39 200–45 700 грн/місяць\nВід 18 років\n\n🎀 Умови вакансії — в описі профілю" }
+  ];
+  var ALL = "__all__";
+
+  var defaults = [];   // з data.json
+  var custom = [];     // додані вручну, зберігаються в браузері
+  var deletedKeys = {}; // ключі видалених текстів
+  var last = null;
+  var localFileHandle = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var els = {
+    count: $("count"), random: $("randomBtn"), topic: $("topicSelect"),
+    output: $("output"), topicLabel: $("topicLabel"), indexLabel: $("indexLabel"),
+    resultActions: $("resultActions"), copy: $("copyBtn"), deleteBtn: $("deleteBtn"),
+    autoDeleteCheck: $("autoDeleteCheck"),
+    status: $("status"),
+    textInput: $("textInput"),
+    add: $("addBtn"), mineBox: $("mineBox"), mineListWrap: $("mineListWrap"), mineList: $("mineList"),
+    linkFileBtn: $("linkFileBtn"), download: $("downloadBtn"), restore: $("restoreBtn"), clear: $("clearBtn")
+  };
+
+  function setStatus(msg, isError) {
+    els.status.textContent = msg || "";
+    els.status.className = "status" + (isError ? " error" : "");
+  }
+
+  function itemKey(i) {
+    if (!i) return "";
+    return ((i.topic || "").trim() + ":::" + (i.text || "").trim());
+  }
+
+  function deletedCount() {
+    return Object.keys(deletedKeys).length;
+  }
+
+  function saveDeleted() {
+    try { localStorage.setItem(STORAGE_DELETED_KEY, JSON.stringify(deletedKeys)); } catch (e) {}
+  }
+
+  function allItems() {
+    return defaults.concat(custom).filter(function (i) {
+      return !deletedKeys[itemKey(i)];
+    });
+  }
+
+  // Збереження у фізичний файл data.json на диску (через Node.js сервер або File System Access API)
+  async function saveToDisk(dataArray) {
+    var isLocalhost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+    // 1. Тільки якщо запущено локально через node local-server.js
+    if (isLocalhost && (location.protocol === "http:" || location.protocol === "https:")) {
+      try {
+        var res = await fetch("/api/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(dataArray)
+        });
+        if (res.ok) return "server";
+      } catch (e) {}
+    }
+
+    // 2. Якщо підключено локальний файл через File System Access API (працює і на Vercel у Chrome/Edge)
+    if (localFileHandle) {
+      try {
+        var writable = await localFileHandle.createWritable();
+        await writable.write(JSON.stringify(dataArray, null, 2));
+        await writable.close();
+        return "fsa";
+      } catch (e) {
+        console.error("Помилка запису в підключений файл:", e);
+      }
+    }
+
+    return "browser_only";
+  }
+
+  async function persistChanges(prefixMsg) {
+    saveCustom();
+    saveDeleted();
+    var currentData = allItems();
+    var saveType = await saveToDisk(currentData);
+
+    var note = "";
+    if (saveType === "server") {
+      note = " (💾 data.json оновлено на диску)";
+    } else if (saveType === "fsa") {
+      note = " (💾 записано у підключений data.json)";
+    }
+
+    if (prefixMsg) {
+      setStatus(prefixMsg + note);
+    }
+  }
+
+  function normalize(data) {
+    var arr = Array.isArray(data) ? data : (data && Array.isArray(data.items) ? data.items : null);
+    if (!arr) throw new Error("JSON має бути масивом об’єктів з полями topic і text.");
+    var clean = arr
+      .filter(function (x) { return x && typeof x.text === "string" && x.text.trim(); })
+      .map(function (x) {
+        return {
+          topic: typeof x.topic === "string" && x.topic.trim() ? x.topic.trim() : "Без тематики",
+          text: x.text
+        };
+      });
+    if (!clean.length) throw new Error("Не знайдено жодного запису з полем text.");
+    return clean;
+  }
+
+  function topics() {
+    var seen = {}, out = [];
+    allItems().forEach(function (i) { if (!seen[i.topic]) { seen[i.topic] = true; out.push(i.topic); } });
+    return out;
+  }
+
+  function saveCustom() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(custom)); } catch (e) {}
+  }
+
+  function renderTopics() {
+    var current = els.topic.value || ALL;
+    var list = topics();
+    els.topic.innerHTML = "";
+    var o = document.createElement("option");
+    o.value = ALL; o.textContent = "Усі тематики";
+    els.topic.appendChild(o);
+    list.forEach(function (t) {
+      var opt = document.createElement("option");
+      opt.value = t; opt.textContent = t;
+      els.topic.appendChild(opt);
+    });
+    els.topic.value = list.indexOf(current) >= 0 ? current : ALL;
+
+    var total = allItems().length;
+    var delTotal = deletedCount();
+    els.count.textContent = "Записів: " + total + ", тематик: " + list.length + (delTotal ? " (видалено/використано: " + delTotal + ")" : "");
+  }
+
+  function renderMine() {
+    els.mineList.innerHTML = "";
+    var hasCustom = custom.length > 0;
+    els.mineListWrap.hidden = !hasCustom;
+    els.clear.hidden = !hasCustom;
+
+    custom.forEach(function (item) {
+      var li = document.createElement("li");
+      var t = document.createElement("div");
+      t.className = "t";
+      var b = document.createElement("b");
+      b.textContent = item.topic;
+      var s = document.createElement("span");
+      s.textContent = item.text.replace(/\s+/g, " ");
+      t.appendChild(b); t.appendChild(s);
+      var del = document.createElement("button");
+      del.type = "button"; del.textContent = "Видалити";
+      del.className = "btn-delete";
+      del.addEventListener("click", function () {
+        deleteItem(item);
+        setStatus("Текст видалено.");
+      });
+      li.appendChild(t); li.appendChild(del);
+      els.mineList.appendChild(li);
+    });
+
+    var delTotal = deletedCount();
+    if (delTotal > 0) {
+      els.restore.hidden = false;
+      els.restore.textContent = "Відновити всі видалені (" + delTotal + ")";
+    } else {
+      els.restore.hidden = true;
+    }
+  }
+
+  function renderAll() {
+    renderTopics();
+    renderMine();
+  }
+
+  function pool() {
+    var t = els.topic.value;
+    var all = allItems();
+    return t === ALL ? all : all.filter(function (i) { return i.topic === t; });
+  }
+
+  function showRandom() {
+    var p = pool();
+    if (!p.length) {
+      last = null;
+      els.output.className = "bubble empty";
+      els.output.textContent = "У цьому списку немає текстів (усі скопійовані або видалені).";
+      els.topicLabel.textContent = "";
+      els.indexLabel.textContent = "";
+      els.resultActions.hidden = true;
+      setStatus("Усі доступні тексти закінчилися.", true);
+      return;
+    }
+    var pick;
+    if (p.length === 1) {
+      pick = p[0];
+    } else {
+      do { pick = p[Math.floor(Math.random() * p.length)]; } while (p.length > 1 && pick === last);
+    }
+    last = pick;
+    els.output.className = "bubble";
+    els.output.textContent = pick.text;
+    els.topicLabel.textContent = pick.topic;
+    els.indexLabel.textContent = "Залишилось: " + p.length;
+    els.resultActions.hidden = false;
+    setStatus("");
+  }
+
+  async function deleteItem(item) {
+    if (!item) return;
+    var k = itemKey(item);
+    deletedKeys[k] = true;
+
+    // Видаляємо з defaults та custom
+    for (var i = defaults.length - 1; i >= 0; i--) {
+      if (itemKey(defaults[i]) === k) {
+        defaults.splice(i, 1);
+      }
+    }
+    for (var j = custom.length - 1; j >= 0; j--) {
+      if (itemKey(custom[j]) === k) {
+        custom.splice(j, 1);
+      }
+    }
+
+    renderAll();
+    await persistChanges("🗑️ Текст видалено.");
+  }
+
+  function parseJson(raw) {
+    var t = raw.trim();
+    if (!t) return null;
+    var tries = [t, t.replace(/`/g, "")];
+    for (var i = 0; i < tries.length; i++) {
+      try { return normalize(JSON.parse(tries[i])); } catch (e) { /* далі */ }
+    }
+    return null;
+  }
+
+  async function addFromField(showErrors) {
+    var raw = els.textInput.value;
+    if (!raw.trim()) { if (showErrors) setStatus("Встав JSON у поле.", true); return; }
+    var parsed = parseJson(raw);
+    if (!parsed) {
+      if (showErrors) setStatus("Не вдалося прочитати JSON. Перевір дужки, коми й лапки.", true);
+      return;
+    }
+    var have = {};
+    allItems().forEach(function (i) { have[itemKey(i)] = true; });
+    var fresh = parsed.filter(function (i) {
+      var k = itemKey(i);
+      if (have[k]) return false;
+      have[k] = true;
+      return true;
+    });
+    els.textInput.value = "";
+    if (!fresh.length) { setStatus("Усі ці тексти вже є у списку."); return; }
+
+    // Зберігаємо і в custom (для localStorage), і в defaults (для поточної бази)
+    defaults = defaults.concat(fresh);
+    custom = custom.concat(fresh);
+    renderAll();
+
+    var skipped = parsed.length - fresh.length;
+    var msg = "Додано нових текстів: " + fresh.length + (skipped ? ", пропущено дублікатів: " + skipped : "") + ".";
+    await persistChanges("✅ " + msg);
+  }
+
+  var autoTimer = null;
+  els.textInput.addEventListener("input", function () {
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(function () { addFromField(false); }, 250);
+  });
+  els.textInput.addEventListener("paste", function () {
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(function () { addFromField(true); }, 50);
+  });
+  els.add.addEventListener("click", function () { addFromField(true); });
+
+  els.random.addEventListener("click", showRandom);
+  els.topic.addEventListener("change", function () { last = null; });
+
+  els.clear.addEventListener("click", async function () {
+    if (!confirm("Видалити всі додані тобою тексти?")) return;
+    custom = [];
+    renderAll();
+    await persistChanges("Усі додані тексти видалено.");
+  });
+
+  els.restore.addEventListener("click", async function () {
+    if (!confirm("Відновити всі раніше видалені тексти?")) return;
+    deletedKeys = {};
+    renderAll();
+    await persistChanges("Усі видалені тексти відновлено.");
+    showRandom();
+  });
+
+  els.autoDeleteCheck.addEventListener("change", function () {
+    try {
+      localStorage.setItem(STORAGE_AUTO_DELETE, els.autoDeleteCheck.checked ? "true" : "false");
+    } catch (e) {}
+  });
+
+  function fallbackCopy(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "absolute";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      var ok = document.execCommand("copy");
+      if (ok) { done(); } else { setStatus("Не вдалося скопіювати.", true); }
+    } catch (e) {
+      setStatus("Не вдалося скопіювати.", true);
+    }
+    document.body.removeChild(ta);
+  }
+
+  function doCopy() {
+    if (!last) return;
+    var item = last;
+    var text = item.text;
+    var autoDel = els.autoDeleteCheck.checked;
+
+    var onDone = async function () {
+      if (autoDel) {
+        await deleteItem(item);
+        last = null;
+        var p = pool();
+        if (p.length > 0) {
+          showRandom();
+          setStatus("✅ Скопійовано та видалено з бази! Показано наступний текст.");
+        } else {
+          showRandom();
+          setStatus("✅ Скопійовано та видалено! Більше текстів немає.");
+        }
+      } else {
+        setStatus("✅ Текст скопійовано в буфер обміну.");
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onDone, function () { fallbackCopy(text, onDone); });
+    } else {
+      fallbackCopy(text, onDone);
+    }
+  }
+
+  async function doDelete() {
+    if (!last) return;
+    var item = last;
+    await deleteItem(item);
+    last = null;
+    var p = pool();
+    if (p.length > 0) {
+      showRandom();
+      setStatus("🗑️ Текст видалено! Показано наступний.");
+    } else {
+      showRandom();
+      setStatus("🗑️ Текст видалено! Тексти закінчилися.");
+    }
+  }
+
+  els.copy.addEventListener("click", doCopy);
+  els.deleteBtn.addEventListener("click", doDelete);
+
+  els.download.addEventListener("click", function () {
+    var blob = new Blob([JSON.stringify(allItems(), null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "data.json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
+
+  function init() {
+    try {
+      var saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) custom = normalize(JSON.parse(saved));
+    } catch (e) { custom = []; }
+
+    try {
+      var savedDel = localStorage.getItem(STORAGE_DELETED_KEY);
+      if (savedDel) deletedKeys = JSON.parse(savedDel);
+    } catch (e) { deletedKeys = {}; }
+
+    try {
+      var savedAuto = localStorage.getItem(STORAGE_AUTO_DELETE);
+      els.autoDeleteCheck.checked = (savedAuto === null || savedAuto === "true");
+    } catch (e) {
+      els.autoDeleteCheck.checked = true;
+    }
+
+    // Підтримка прямого підключення локального data.json (File System Access API)
+    if ("showOpenFilePicker" in window) {
+      els.linkFileBtn.style.display = "inline-block";
+      els.linkFileBtn.addEventListener("click", async function () {
+        try {
+          var [handle] = await window.showOpenFilePicker({
+            types: [{
+              description: "JSON файл",
+              accept: { "application/json": [".json"] }
+            }],
+            multiple: false
+          });
+          localFileHandle = handle;
+          var file = await handle.getFile();
+          var content = await file.text();
+          var parsed = JSON.parse(content);
+          defaults = normalize(parsed);
+          deletedKeys = {};
+          saveDeleted();
+          renderAll();
+          els.linkFileBtn.textContent = "🟢 " + file.name + " (підключено)";
+          els.linkFileBtn.style.borderColor = "var(--accent)";
+          setStatus("✅ Файл " + file.name + " підключено! Тепер будь-які зміни пишуться прямо в нього на диску.");
+        } catch (e) {
+          if (e.name !== "AbortError") {
+            setStatus("Не вдалося підключити файл: " + e.message, true);
+          }
+        }
+      });
+    }
+
+    fetch("data.json", { cache: "no-cache" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("Не вдалося завантажити data.json");
+        return r.json();
+      })
+      .then(function (d) {
+        defaults = normalize(d);
+      })
+      .catch(function () {
+        defaults = normalize(FALLBACK);
+      })
+      .then(function () {
+        renderAll();
+      });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
